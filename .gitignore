@@ -33,4 +33,7 @@ cover/
 # Environment
 .venv
 
+# Keys
+key.txt
+
 
