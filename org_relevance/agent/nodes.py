@@ -6,7 +6,7 @@ from typing import Literal
 
 from org_relevance.common.types import AgentState, Organization, Relevance
 from org_relevance.agent.utils import _extract_json_object, _clamp_relevance
-from org_relevance.prompts.all_promtps import  ROUTER_PROMPT, MAKE_SEARCH_QUERY_PROMPT, CLASSIFIER_PROMPT_SINGLE
+from org_relevance.prompts.all_promtps import  ROUTER_PROMPT, ROUTER_FEW_SHOT, CLASSIFIER_PROMPT, CLASSIFIER_FEW_SHOT, MAKE_SEARCH_QUERY_PROMPT
 
 from org_relevance.web.providers import ollama_web_search, duckduckgo_web_search
 from org_relevance.web.retrieve import retrieve_top_chunks_on_the_fly
@@ -18,17 +18,17 @@ def router_node(state: AgentState, llm) -> dict:
     Router node
     """
 
-    # если лимит веба исчерпан - принудительно решаем
+    # ---- если лимит веба исчерпан - принудительно решаем
     if state.get("web_tries", 0) >= state.get("max_web_tries", 2):
         if CONFIG.DEBUG:
             print(f"\t[LOG] Web Limit. Forcing model to classify.")\
         
         return {
         "can_decide_now": True,
-        "router_reason": "Исчерпан лимит веб поиска. Выполни классификацию по всем имеющимся данным"
+        "router_reason": "Исчерпан лимит веб поиска. Выполни классификацию по всем имеющимся данным."
         }
 
-    # если нет - спрашиваем у модели ответ
+    # ---- если нет спрашиваем у модели ответ
     org = state["organization"]
     payload = {
         "query": state["query"],
@@ -38,26 +38,33 @@ def router_node(state: AgentState, llm) -> dict:
         "web_evidence": state.get("org_web_evidence", "")
     }
 
-    msg = ROUTER_PROMPT + "\n\nINPUT:\n" + json.dumps(payload, ensure_ascii=False)
+    msg = ROUTER_PROMPT + "\n\nFEW-SHOT:\n" + ROUTER_FEW_SHOT + "\n\nINPUT:\n" + json.dumps(payload, ensure_ascii=False)
     if CONFIG.DEBUG:
         print(f"[LOG] Node: Router.  Prompting: {payload}")
-    raw = llm.invoke(msg).content  # ожидаем объект с can_decide_now/reason
+    raw = llm.invoke(msg).content
 
     obj = _extract_json_object(raw)
 
     can = bool(obj.get("can_decide_now", False))
+    q = str(obj.get("web_search_query", "")).strip()
+    s = str(obj.get("search_phrase", "")).strip()
+
     if CONFIG.DEBUG:
         print(f"\t[LOG] Model verdict: can decide now - {can}")
         print(f"\t[LOG] Model verdict: {str(obj.get('reason', ''))}")
+        print(f"\t[LOG] Model generated Query: {q}")
+        print(f"\t[LOG] Model generated Phrase: {s}")
+        
 
 
     return {
         "can_decide_now": can,
-        "router_reason": str(obj.get("reason", "")),
+        "web_search_query": str(obj.get("web_search_query", "")),
+        "search_phrase": str(obj.get("search_phrase", "")),
     }
 
 
-
+# Метод не используется для экономии токенов. Можно будет убрать его позже.
 def make_search_query_node(state: AgentState, llm) -> dict:
     """
     Generate a search query to get information
@@ -104,19 +111,29 @@ def web_search_node(state: AgentState) -> dict:
     Нода выполняет запрос к LLM для формирования правильного запроса.
     В конце увеличивает счетчик попыток поиска.
     """
-    q = state["web_search_query"]
-
     if CONFIG.DEBUG:
         print(f"[LOG] Node: web_search_node.")
         print(f"\t[LOG] Starting searching")
 
-    result = ollama_web_search(q)
+    # запрос
+    q = str(state.get("web_search_query", "")).strip()
+    # всегда увеличиваем счетчик обращений к вебу
+    tries = int(state.get("web_tries", 0)) + 1
+    
+
+    # Выбор api для поиска
+    if "ollama" in CONFIG.web_provider.lower():
+        result = ollama_web_search(q)
+    elif "duck" in CONFIG.web_provider.lower():
+        result = duckduckgo_web_search(q)
+    else:
+        result = ""
+        print("[ERROR] В config.json отсутвует web provider. Укажите в поле web_provider")
 
     if CONFIG.DEBUG:
         print(f"\t[LOG] Ending searching.")
-        print(f"\t[LOG] Finded info: {result}"[:1000])
+        print(f"\t[LOG] Finded info: {result}"[:500])
 
-    tries = int(state.get("web_tries", 0)) + 1
     return {
         "web_search_result": result,
         "web_tries": tries,
@@ -127,7 +144,7 @@ def augment_context_node(state: AgentState, model_embeddings) -> dict:
     """
     Добавляем веб-результат в накопленное поле org_web_evidence.
     Внимание! Тут старый результат поиска если он есть удаляется.
-    Причина: старый результат нам не нужен, видимо запрос модели был неккоректен.
+    Причина: старый результат нам не нужен, так как второй раз мы ищем если первый запрос модели был неккоректен.
     """
     if CONFIG.DEBUG:
         print(f"[LOG] Node: augment_context_node")
@@ -135,10 +152,21 @@ def augment_context_node(state: AgentState, model_embeddings) -> dict:
 
 
     web_results = state.get("web_search_result") or []
+    web_search_query = state.get("web_search_query", "")
     query = state.get("search_phrase", "")
+
+    # fallback если нет запроса
+    if query == "":
+        if web_search_query != "":
+            print(f"\t[WARNING] Query is clean. Using web search query instead {web_search_query}")
+        else:
+            print(f"\t[WARNING] Query and web search query is clean")
+            return {}
+
     if CONFIG.DEBUG:
         print(f"\t[LOG] Phrase: {query}")
 
+    # Поиск нужных чанков в документе
     top_chunks = retrieve_top_chunks_on_the_fly(
         query,
         web_results=web_results,
@@ -151,7 +179,7 @@ def augment_context_node(state: AgentState, model_embeddings) -> dict:
         max_total_chunks=2000,
         lexical_prefilter_topn=0 # отключим пока что фильтр
     )
-
+    
     if CONFIG.DEBUG:
         print(f"\t[LOG] Chunks finded: {top_chunks}")
 
@@ -159,7 +187,9 @@ def augment_context_node(state: AgentState, model_embeddings) -> dict:
 
 
 def classify_node(state: AgentState, llm) -> dict:
-
+    """
+    Классификационная нода
+    """
     if CONFIG.DEBUG:
         print(f"[LOG] Node: classify_node")
 
@@ -173,7 +203,7 @@ def classify_node(state: AgentState, llm) -> dict:
         "organization": org
     }
 
-    msg = CLASSIFIER_PROMPT_SINGLE + "\n\nINPUT:\n" + json.dumps(current_case, ensure_ascii=False)
+    msg = CLASSIFIER_PROMPT + "\n\nEXAMPLES:\n"+ CLASSIFIER_FEW_SHOT + "\n\nINPUT:\n" + json.dumps(current_case, ensure_ascii=False)
     raw = llm.invoke(msg).content
 
     obj = _extract_json_object(raw)
@@ -190,7 +220,3 @@ def classify_node(state: AgentState, llm) -> dict:
         "reason": reason,
     }
 
-
-
-def route_after_router(state: AgentState) -> Literal["classify", "make_search_query"]:
-    return "classify" if state.get("can_decide_now", False) else "make_search_query"
