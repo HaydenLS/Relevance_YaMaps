@@ -1,0 +1,11 @@
+{
+  "debug": true,
+  "max_web_tries": 1,
+  "web_provider": "duckduckgo",
+  "keys": 
+  [
+    {"name": "OPENROUTER_API_KEY", "key":""},
+    {"name": "OPENAI_API_KEY", "key":""},
+    {"name": "OLLAMA_API_KEY", "key":""}
+  ]
+}

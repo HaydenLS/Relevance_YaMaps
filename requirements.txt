@@ -1,0 +1,13 @@
+ollama
+langchain-openai
+langchain-text-splitters
+langchain_community
+langgraph
+rank-bm25
+sentence-transformers
+pandas
+numpy
+matplotlib
+seaborn
+jupyter
+ipykernel
