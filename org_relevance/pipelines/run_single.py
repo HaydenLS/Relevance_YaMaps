@@ -1,3 +1,5 @@
+### Функция для старта по одному примеру
+
 import numpy as np
 import pandas as pd
 import os

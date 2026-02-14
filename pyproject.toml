@@ -1,0 +1,39 @@
+[project]
+name = "relevance-yamaps"
+version = "1.0.0"
+description = "Relevance prediction using agents."
+authors = [
+    {name = "Hayden",email = "lunixfang@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = "^3.11"
+dependencies = [
+    "ollama (>=0.6.1,<0.7.0)",
+    "pandas (>=2.2,<3.0)",
+    "numpy (>=2.4.2,<3.0.0)",
+    "streamlit (>=1.54.0,<2.0.0)",
+    "langchain-openai (>=1.1.9,<2.0.0)",
+    "langchain-text-splitters (>=1.1.0,<2.0.0)",
+    "langchain-community (>=0.4.1,<0.5.0)",
+    "langgraph (>=1.0.8,<2.0.0)",
+    "rank-bm25 (>=0.2.2,<0.3.0)",
+    "sentence-transformers (>=5.2.2,<6.0.0)",
+    "matplotlib (>=3.10.8,<4.0.0)",
+    "seaborn (>=0.13.2,<0.14.0)",
+    "jupyter (>=1.1.1,<2.0.0)",
+    "ipykernel (>=7.2.0,<8.0.0)",
+    "ddgs (>=9.10.0,<10.0.0)",
+    "scikit-learn (>=1.8.0,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "org-relevance"
+version = "0.1.0"
+description = "Project full code without streamlit"
+packages = [{ include = "org_relevance" }]

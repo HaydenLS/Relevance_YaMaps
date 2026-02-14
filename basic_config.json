@@ -6,6 +6,7 @@
   [
     {"name": "OPENROUTER_API_KEY", "key":""},
     {"name": "OPENAI_API_KEY", "key":""},
-    {"name": "OLLAMA_API_KEY", "key":""}
+    {"name": "OLLAMA_API_KEY", "key":""},
+	{"name": "HF_TOKEN", "key":""}
   ]
 }
