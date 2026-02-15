@@ -7,6 +7,7 @@ import numpy as np
 import streamlit as st
 from contextlib import redirect_stdout, redirect_stderr
 import io
+import time
 
 from langchain_openai import ChatOpenAI
 
@@ -126,7 +127,7 @@ if end_idx < start_idx:
 st.text(f"Выбрано {end_idx - start_idx + 1} строк (индексы {start_idx}..{end_idx})")
 
 # Подготовим данные для выбранного диапазона
-selected_df = df.iloc[start_idx:end_idx+1]
+selected_df = df.iloc[start_idx:end_idx+1].copy()
 # prepared_data = prepare_dataset(selected_df) # prepared data - датафрейм их tuplов
 
 
@@ -174,6 +175,17 @@ with btn_col2:
 if stop_clicked:
     st.session_state.stop_requested = True
 
+# Функция для отрисовки времени
+def fmt_hms(seconds: float) -> str:
+    seconds = int(seconds)
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    if h > 0:
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
 # ----------- Нажата кнопка старта -----------
 if start_clicked:
     st.session_state.stop_requested = False
@@ -186,11 +198,28 @@ if start_clicked:
     progress_bar = st.progress(0)
     processed = 0
 
+    # Progress text
+    batch_label = st.empty()
+    batch_total = total 
+    batch_start = start_idx
+    batch_end = end_idx
+
+    # Time bar
+    time_box = st.empty()
+    start_time = time.time()
+
     for idx, row in selected_df.iterrows():
         # Проверка на стоп
         if st.session_state.stop_requested:
             st.warning("Остановка.")
             break
+
+        current_in_batch = processed + 1
+        batch_label.text(
+            f"Batch: {batch_start}..{batch_end} | "
+            f"item {current_in_batch}/{batch_total} | "
+            f"global row_index={idx}"
+        )
 
         try:
             # делам из строки agent_state
@@ -217,6 +246,9 @@ if start_clicked:
         
         processed += 1
         progress_bar.progress(int(processed / total * 100))
+        
+        elapsed = time.time() - start_time
+        time_box.text(f"Time: {fmt_hms(elapsed)}")
 
     st.session_state.is_running = False
     if not results:
@@ -228,8 +260,11 @@ if start_clicked:
 
     # Преобразуем результаты в DataFrame для сохранения
     result_df = pd.DataFrame(results)
-    # Объединяем
-    full_result_df = pd.concat([selected_df, result_df], axis=1)
+
+    left = selected_df.reset_index().rename(columns={"index": "row_index"})
+    right = result_df.reset_index(drop=True)
+
+    full_result_df = pd.concat([left, right], axis=1)
 
     jsonl_data = full_result_df.to_json(orient="records", lines=True, force_ascii=False)
 
