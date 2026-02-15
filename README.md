@@ -58,12 +58,12 @@
 
 ## 1. Настройка конфигурации
 
-Перед запуском необходимо открыть файл:
+### 1.1 Перед запуском необходимо открыть файл:
 
-Base Config/basic_config.json
+`basic_config.json`
 
 и указать ключи доступа:
-
+```
 {
   "debug": true,
   "keys": [
@@ -73,14 +73,15 @@ Base Config/basic_config.json
     {"name": "HF_TOKEN", "key": ""}
   ]
 }
-
+```
 Требования:
 
 - HF_TOKEN обязателен  
 - Необходим любой LLM-провайдер: OpenAI или OpenRouter или свой собственный
 - OLLAMA_API_KEY требуется только при использовании Ollama  
 
-**Переименуйте файл в config.json**
+
+### 1.2 Переименуйте файл basic_config.json в config.json
 
 ---
 
