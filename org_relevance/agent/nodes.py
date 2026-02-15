@@ -216,7 +216,7 @@ def classify_node(state: AgentState, llm) -> dict:
         print(f"\t[LOG] Node: classify_node. Model verdict: relevance {rel}, reason {reason}")
 
     return {
-        "relevance": rel,
+        "relevance_model": rel,
         "reason": reason,
     }
 

@@ -50,7 +50,7 @@ if __name__ == "__main__":
 
     print('\n\n Итог:')
     print(f"Реальная метка: {relevance_true}")
-    print(f"Метка модели:{ result['relevance']}")
+    print(f"Метка модели:{ result['relevance_model']}")
     print(f"Вердикт модели: {result['reason']}")
     print("\n")
 

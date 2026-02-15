@@ -43,5 +43,8 @@ class AgentState(TypedDict, total=False):
 
 
     # final output
-    relevance: Relevance
+    relevance_model: Relevance
     reason: str
+
+    # for output
+    relevance_true: Relevance

@@ -6,15 +6,16 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("Yamaps Relevance - Streamlit UI")
+st.title("DLS Yamaps Relevance - Streamlit UI")
 
 st.markdown(
 """
 Это оболочка над пайплайном.
 
 Откройте страницу **Single Query** слева (в меню Pages), чтобы:
-- выбрать строку датасета по `ID`
-- увидеть исходные данные и `relevance_true`
+- загрузить датасет
+- выбрать строку датасета по ID
+- увидеть исходные данные и метку класса
 - запустить `graph.invoke(basic_state)`
 - посмотреть `relevance` и `reason`
 

@@ -1,11 +1,10 @@
 ## Запуск по отдельным примерам.
 
-
 import os
 import json
 import streamlit as st
 import pandas as pd
-from contextlib import redirect_stdout, redirect_stderr
+# from contextlib import redirect_stdout, redirect_stderr
 import io
 
 from langchain_openai import ChatOpenAI
@@ -28,15 +27,22 @@ LLM_PROVIDERS = {
     }
 }
 
-
+# Загрузка документа (будет в сайдбаре)
 @st.cache_data(show_spinner=False)
-def load_df(path: str) -> pd.DataFrame:
-    return pd.read_json(path, lines=True)
+def load_df_from_bytes(file_bytes: bytes) -> pd.DataFrame:
+    return pd.read_json(io.BytesIO(file_bytes), lines=True)
+
+def load_df(uploaded_file) -> pd.DataFrame:
+    """
+    uploaded_file: st.file_uploader output (UploadedFile) or None
+    """
+    file_bytes = uploaded_file.getvalue()
+    return load_df_from_bytes(file_bytes)
+
 
 
 @st.cache_resource(show_spinner=False)
 def get_graph_cached(provider_name: str, model_name: str, api_key: str, base_url: str):
-    # Важно: cache_resource кэшируется по аргументам функции.
     llm = ChatOpenAI(
         model=model_name,
         api_key=api_key,
@@ -59,7 +65,12 @@ st.title("Single Query")
 with st.sidebar:
     st.header("Настройки")
 
-    dataset_path = st.text_input("Путь к датасету (jsonl)", value=str(CONFIG.train_path))
+    # --- Datset ---
+    uploaded_dataset = st.file_uploader(
+        "Загрузить датасет (jsonl)",
+        type=["jsonl", "json"],
+        accept_multiple_files=False,
+    )
 
     # --- LLM provider ---
     provider_name = st.selectbox("LLM provider", list(LLM_PROVIDERS.keys()), index=0)
@@ -79,12 +90,16 @@ with st.sidebar:
     CONFIG.web_provider = web_provider
 
 
-# ---------- ВАЛИДАЦИЯ ----------
-if not dataset_path:
-    st.error("Не задан путь к датасету")
+# ---------- ВАЛИДАЦИЯ ---------
+if uploaded_dataset is None:
+    st.error("Не загружен файл")
+    st.stop()
+try:
+    df = load_df(uploaded_dataset)
+except Exception as e:
+    st.exception(e)
     st.stop()
 
-df = load_df(dataset_path)
 
 if df.empty:
     st.error("Датасет пустой или не прочитался.")
@@ -100,22 +115,18 @@ with col_b:
     st.write(f"Размер датасета: **{len(df)}** строк. Выбран ID: **{row_id}**")
 
 row = df.iloc[int(row_id)]
-basic_state, relevance_true = get_template_from_row(row)
+basic_state = get_template_from_row(row)
 
 
 # ---------- ПОКАЗ ИСХОДНЫХ ДАННЫХ ----------
 st.subheader("Исходные данные / шаблон состояния")
-tabs = st.tabs(["Row (raw)", "basic_state", "relevance_true"])
+tabs = st.tabs(["Row (raw)", "basic_state"])
 
+# показать строку в сыров виде и в вииде AgentState
 with tabs[0]:
-    # Показать строку как dict
     st.json(row.to_dict())
-
 with tabs[1]:
     st.code(safe_json(basic_state), language="json")
-
-with tabs[2]:
-    st.write(relevance_true)
 
 
 # ---------- ИНИЦИАЛИЗАЦИЯ ГРАФА ----------
@@ -135,24 +146,12 @@ st.subheader("Запуск")
 run = st.button("Run graph.invoke()", type="primary")
 
 if run:
-    log_buf = io.StringIO()
-    err_buf = io.StringIO()
-
     with st.spinner("Выполняю граф..."):
         try:
-            with redirect_stdout(log_buf), redirect_stderr(err_buf):
-                result = graph.invoke(basic_state)
+            
+            result = graph.invoke(basic_state)
         except Exception as e:
             st.exception(e)
-            # покажем то, что успело залогироваться
-            logs = log_buf.getvalue()
-            errs = err_buf.getvalue()
-            if logs:
-                st.subheader("Logs")
-                st.text_area("stdout", logs, height=250)
-            if errs:
-                st.subheader("Errors")
-                st.text_area("stderr", errs, height=250)
             st.stop()
 
     st.success("Готово")
@@ -161,23 +160,12 @@ if run:
     st.subheader("Результат")
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("Реальная метка", value=str(relevance_true))
+        st.metric("Реальная метка", value=str(result.get("relevance_true")))
     with col2:
-        st.metric("Метка модели", value=str(result.get("relevance")))
+        st.metric("Метка модели", value=str(result.get("relevance_model")))
 
     st.markdown("**Вердикт модели (reason):**")
     st.write(result.get("reason", ""))
 
     with st.expander("Полный result"):
         st.code(safe_json(result), language="json")
-
-    # Логи
-    logs = log_buf.getvalue()
-    errs = err_buf.getvalue()
-
-    with st.expander("Logs (stdout)"):
-        st.text_area("stdout", logs, height=300)
-
-    if errs.strip():
-        with st.expander("Errors (stderr)"):
-            st.text_area("stderr", errs, height=200)
