@@ -5,7 +5,7 @@ from typing import Literal
 
 
 from org_relevance.common.types import AgentState, Organization, Relevance
-from org_relevance.agent.utils import _extract_json_object, _clamp_relevance
+from org_relevance.agent.utils import _extract_json_object, _clamp_relevance, safe_llm_invoke, safe_web_search, parse_json_or_repair
 from org_relevance.prompts.all_promtps import  ROUTER_PROMPT, ROUTER_FEW_SHOT, CLASSIFIER_PROMPT, CLASSIFIER_FEW_SHOT, MAKE_SEARCH_QUERY_PROMPT
 
 from org_relevance.web.providers import ollama_web_search, duckduckgo_web_search
@@ -41,9 +41,23 @@ def router_node(state: AgentState, llm) -> dict:
     msg = ROUTER_PROMPT + "\n\nFEW-SHOT:\n" + ROUTER_FEW_SHOT + "\n\nINPUT:\n" + json.dumps(payload, ensure_ascii=False)
     if CONFIG.DEBUG:
         print(f"[LOG] Node: Router.  Prompting: {payload}")
-    raw = llm.invoke(msg).content
 
-    obj = _extract_json_object(raw)
+
+    # Запрос модели
+    try:
+        raw = safe_llm_invoke(llm, msg, retries=2)
+    except Exception as e:
+        print(f"\t[ERROR] Ошибка llm  \n{e}.")
+        raise
+         
+
+    # Запрос чтения json
+    try:
+        obj = parse_json_or_repair(raw, llm=llm, retries=1)
+    except Exception as e:
+        print(f"\t[ERROR] Json Parse error \n{e}")
+        raise
+    
 
     can = bool(obj.get("can_decide_now", False))
     q = str(obj.get("web_search_query", "")).strip()
@@ -64,47 +78,6 @@ def router_node(state: AgentState, llm) -> dict:
     }
 
 
-# Метод не используется для экономии токенов. Можно будет убрать его позже.
-def make_search_query_node(state: AgentState, llm) -> dict:
-    """
-    Generate a search query to get information
-
-    """
-
-    if CONFIG.DEBUG:
-        print(f"[LOG] Node: Make search query.")
-    org = state["organization"]
-    payload = {
-        "query": state["query"],
-        "organization": {
-            "name": org.get("name", ""),
-            "category": org.get("category", ""),
-            "address": org.get("address", ""),
-        },
-        "router_reason": state.get("router_reason", "")
-    }
-
-    msg = MAKE_SEARCH_QUERY_PROMPT + "\n\nINPUT:\n" + json.dumps(payload, ensure_ascii=False)
-    raw = llm.invoke(msg).content
-    obj = _extract_json_object(raw)
-
-
-    q = str(obj.get("web_search_query", "")).strip()
-    s = str(obj.get("search_phrase", "")).strip()
-
-    if CONFIG.DEBUG:
-        print(f"\t[LOG] Model generated Query: {q}")
-        print(f"\t[LOG] Model generated Phrase: {s}")
-
-    if not q:
-        # fallback: простая эвристика
-        q = f'{org.get("name","")} {org.get("address","")} {state["query"]}'.strip()
-
-    return {"web_search_query": q,
-            "search_phrase": s}
-
-
-
 
 def web_search_node(state: AgentState) -> dict:
     """
@@ -120,15 +93,13 @@ def web_search_node(state: AgentState) -> dict:
     # всегда увеличиваем счетчик обращений к вебу
     tries = int(state.get("web_tries", 0)) + 1
     
+    try:
+        result = safe_web_search(q, CONFIG.web_provider, retries=2)
+    except Exception as e:
+        
+        print(f"\t[ERROR] Ошибка веб поиска \n{e}.")
+        raise
 
-    # Выбор api для поиска
-    if "ollama" in CONFIG.web_provider.lower():
-        result = ollama_web_search(q)
-    elif "duck" in CONFIG.web_provider.lower():
-        result = duckduckgo_web_search(q)
-    else:
-        result = ""
-        print("[ERROR] В config.json отсутвует web provider. Укажите в поле web_provider")
 
     if CONFIG.DEBUG:
         print(f"\t[LOG] Ending searching.")
@@ -204,16 +175,29 @@ def classify_node(state: AgentState, llm) -> dict:
     }
 
     msg = CLASSIFIER_PROMPT + "\n\nEXAMPLES:\n"+ CLASSIFIER_FEW_SHOT + "\n\nINPUT:\n" + json.dumps(current_case, ensure_ascii=False)
-    raw = llm.invoke(msg).content
 
-    obj = _extract_json_object(raw)
+    # Запрос модели
+    try:
+        raw = safe_llm_invoke(llm, msg, retries=2)
+    except Exception as e:
+        print(f"\t[ERROR] : classify_node. LLM Invoke error \n{e}")
+        raise
+
+    # Запрос чтения json
+    try:
+        obj = parse_json_or_repair(raw, llm=llm, retries=1)
+    except Exception as e:
+        print(f"\t[ERROR] : classify_node. Json Parse error \n{e}")
+        raise
+
 
     rel = _clamp_relevance(obj.get("relevance"))
     reason = str(obj.get("reason", "")).strip()
+    rel_true = state['relevance_true']
 
 
     if CONFIG.DEBUG:
-        print(f"\t[LOG] Node: classify_node. Model verdict: relevance {rel}, reason {reason}")
+        print(f"\t[LOG] Node: classify_node. Model verdict: relevance {rel} (true - {rel_true}), reason {reason}")
 
     return {
         "relevance_model": rel,

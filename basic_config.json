@@ -1,7 +1,5 @@
 {
-  "debug": true,
-  "max_web_tries": 1,
-  "web_provider": "duckduckgo",
+  "debug": true
   "keys": 
   [
     {"name": "OPENROUTER_API_KEY", "key":""},

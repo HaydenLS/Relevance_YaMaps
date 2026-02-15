@@ -5,8 +5,7 @@ from langgraph.graph import StateGraph, START, END
 from sentence_transformers import SentenceTransformer
 
 from org_relevance.common.types import AgentState
-from org_relevance.agent.nodes import router_node, make_search_query_node, web_search_node, augment_context_node, \
-    classify_node
+from org_relevance.agent.nodes import router_node, web_search_node, augment_context_node, classify_node
 
 def route_after_router(state: AgentState) -> Literal["classify", "web_search"]:
     return "classify" if state.get("can_decide_now", False) else "web_search"

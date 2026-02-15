@@ -4,7 +4,8 @@ import os
 import json
 import streamlit as st
 import pandas as pd
-# from contextlib import redirect_stdout, redirect_stderr
+
+from contextlib import redirect_stdout, redirect_stderr
 import io
 
 from langchain_openai import ChatOpenAI
@@ -21,8 +22,8 @@ LLM_PROVIDERS = {
         "env_key_name": "OPENROUTER_API_KEY",
     },
     "OpenAI": {
-        "default_model": "gpt-4o-mini",
-        "default_base_url": "https://api.openai.com/v1",
+        "default_model": "openai/gpt-4o-mini",
+        "default_base_url": "https://api.vsegpt.ru/v1",
         "env_key_name": "OPENAI_API_KEY",
     }
 }
@@ -72,6 +73,9 @@ with st.sidebar:
         accept_multiple_files=False,
     )
 
+    st.divider()
+    st.subheader("LLM")
+
     # --- LLM provider ---
     provider_name = st.selectbox("LLM provider", list(LLM_PROVIDERS.keys()), index=0)
     provider = LLM_PROVIDERS[provider_name]
@@ -86,9 +90,22 @@ with st.sidebar:
         type="password",
     )
 
+    
+    # --- Web search ---
+    st.divider()
+    st.subheader("Web search")
+    
     web_provider = st.selectbox("Web provider", ["duckduckgo", "ollama"], index=0)
     CONFIG.web_provider = web_provider
 
+    max_web_tries = st.number_input(
+        "max_web_tries",
+        min_value=0,
+        max_value=2,
+        value=int(getattr(CONFIG, "max_web_tries", 1)) if hasattr(CONFIG, "max_web_tries") else 1,
+        step=1,
+        help="Лимит попыток веб-поиска внутри графа (если граф читает это поле из состояния).",
+    )
 
 # ---------- ВАЛИДАЦИЯ ---------
 if uploaded_dataset is None:
@@ -115,7 +132,7 @@ with col_b:
     st.write(f"Размер датасета: **{len(df)}** строк. Выбран ID: **{row_id}**")
 
 row = df.iloc[int(row_id)]
-basic_state = get_template_from_row(row)
+basic_state = get_template_from_row(row, max_web_tries)
 
 
 # ---------- ПОКАЗ ИСХОДНЫХ ДАННЫХ ----------
@@ -146,13 +163,17 @@ st.subheader("Запуск")
 run = st.button("Run graph.invoke()", type="primary")
 
 if run:
-    with st.spinner("Выполняю граф..."):
+
+    with st.spinner("Выполняю граф...", show_time=True):
+        buffer = io.StringIO()
         try:
-            
-            result = graph.invoke(basic_state)
+            with redirect_stdout(buffer), redirect_stderr(buffer):
+                result = graph.invoke(basic_state)
         except Exception as e:
             st.exception(e)
             st.stop()
+
+    logs_output = buffer.getvalue()
 
     st.success("Готово")
 
@@ -167,5 +188,11 @@ if run:
     st.markdown("**Вердикт модели (reason):**")
     st.write(result.get("reason", ""))
 
-    with st.expander("Полный result"):
+    with st.expander("Логи выполнения"):
+        if logs_output.strip():
+            st.code(logs_output, language="text")
+        else:
+            st.info("Логи отсутствуют (CONFIG.DEBUG выключен или print не вызывался).")
+
+    with st.expander("Полный AgentState Dict"):
         st.code(safe_json(result), language="json")

@@ -14,7 +14,7 @@ from org_relevance.config import CONFIG
 from org_relevance.agent.graph import build_graph
 from org_relevance.data.dataset import get_template_from_row
 from org_relevance.evaluation.evaluate import calculate_metrics, calculate_confusion_matrix
-
+from org_relevance.agent.utils import RateLimitExhausted
 
 LLM_PROVIDERS = {
     "OpenRouter": {
@@ -23,8 +23,8 @@ LLM_PROVIDERS = {
         "env_key_name": "OPENROUTER_API_KEY",
     },
     "OpenAI": {
-        "default_model": "gpt-4o-mini",
-        "default_base_url": "https://api.openai.com/v1",
+        "default_model": "openai/gpt-4o-mini",
+        "default_base_url": "https://api.vsegpt.ru/v1",
         "env_key_name": "OPENAI_API_KEY",
     }
 }
@@ -201,6 +201,11 @@ if start_clicked:
             # получение результата
             result = {"relevance_model": agent_result.get('relevance_model', np.nan),
                       "reason": agent_result.get('reason', np.nan)}
+
+        except RateLimitExhausted as e:
+            st.error(f"RateLimit/Quota достигнут на строке {idx}. Останавливаю батч. {e}")
+            st.session_state.batch_stop_reason = str(e)
+            break
 
         except Exception as e:
             st.error(f"Ошибка на строке {idx}: {e}")
