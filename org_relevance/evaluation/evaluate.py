@@ -32,8 +32,10 @@ def calculate_confusion_matrix(relevance_true: pd.Series, relevance_model: pd.Se
     cm = confusion_matrix(
         y_trues,
         y_preds,
-        labels=[0, 1, 2], 
+        #labels=[0, 1, 2], # временно закоментровано, проверка на классах 0 и 1
     )
 
     labels = [str(x) for x in LABEL_ORDER]
-    return pd.DataFrame(cm, index=pd.Index(labels, name="true"), columns=pd.Index(labels, name="pred"))
+    #cm_df = pd.DataFrame(cm, index=pd.Index(labels, name="true"), columns=pd.Index(labels, name="pred"))
+    cm_df = pd.DataFrame(cm)
+    return cm_df

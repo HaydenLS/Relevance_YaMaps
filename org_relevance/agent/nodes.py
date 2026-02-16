@@ -6,7 +6,7 @@ from typing import Literal
 
 from org_relevance.common.types import AgentState, Organization, Relevance
 from org_relevance.agent.utils import _extract_json_object, _clamp_relevance, safe_llm_invoke, safe_web_search, parse_json_or_repair
-from org_relevance.prompts.all_promtps import  ROUTER_PROMPT, ROUTER_FEW_SHOT, CLASSIFIER_PROMPT, CLASSIFIER_FEW_SHOT, MAKE_SEARCH_QUERY_PROMPT
+from org_relevance.prompts.all_promtps import  ROUTER_PROMPT, ROUTER_FEW_SHOT, CLASSIFIER_PROMPT, CLASSIFIER_FEW_SHOT
 
 from org_relevance.web.providers import ollama_web_search, duckduckgo_web_search
 from org_relevance.web.retrieve import retrieve_top_chunks_on_the_fly
