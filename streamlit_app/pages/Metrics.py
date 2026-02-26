@@ -5,7 +5,6 @@ import streamlit as st
 
 from org_relevance.evaluation.evaluate import calculate_metrics, calculate_confusion_matrix
 
-
 def safe_json(obj) -> str:
     try:
         return json.dumps(obj, ensure_ascii=False, indent=2)
@@ -38,7 +37,7 @@ file_summaries = []
 for f in uploaded_files:
     try:
         df_part = read_jsonl_bytes(f.getvalue())
-        df_part["__source_file"] = f.name  # удобно для отладки
+        df_part["__source_file"] = f.name
         dfs.append(df_part)
         file_summaries.append((f.name, len(df_part), list(df_part.columns)))
     except Exception as e:
