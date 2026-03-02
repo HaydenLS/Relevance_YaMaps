@@ -2,10 +2,12 @@ import re
 import html
 import json
 from typing import Literal
-
+import logging
 
 from org_relevance.common.types import AgentState, Organization, Relevance
-from org_relevance.agent.utils import _extract_json_object, _clamp_relevance, safe_llm_invoke, safe_web_search, parse_json_or_repair
+from org_relevance.agent.utils import _extract_json_object, _clamp_relevance, safe_llm_invoke, safe_web_search, parse_json_or_repair, \
+get_logger
+
 from org_relevance.prompts.all_promtps import  ROUTER_PROMPT, ROUTER_FEW_SHOT, CLASSIFIER_PROMPT, CLASSIFIER_FEW_SHOT
 
 from org_relevance.web.providers import ollama_web_search, duckduckgo_web_search
@@ -13,15 +15,19 @@ from org_relevance.web.retrieve import retrieve_top_chunks_on_the_fly
 
 from org_relevance.config import CONFIG
 
+
+
 def router_node(state: AgentState, llm) -> dict:
     """
     Router node
     """
+    # get logger
+    logger = get_logger()
 
     # ---- если лимит веба исчерпан - принудительно решаем
     if state.get("web_tries", 0) >= state.get("max_web_tries", 2):
-        if CONFIG.DEBUG:
-            print(f"\t[LOG] Web Limit. Forcing model to classify.")\
+        
+        logger.info("[Router node] Web Limit. Forcing model to classify.")
         
         return {
         "can_decide_now": True,
@@ -39,23 +45,22 @@ def router_node(state: AgentState, llm) -> dict:
     }
 
     msg = ROUTER_PROMPT + "\n\nFEW-SHOT:\n" + ROUTER_FEW_SHOT + "\n\nINPUT:\n" + json.dumps(payload, ensure_ascii=False)
-    if CONFIG.DEBUG:
-        print(f"[LOG] Node: Router.  Prompting: {payload}")
+    logger.info(f"[Router node] Node: Router.  Prompting: {payload}")
 
 
     # Запрос модели
     try:
         raw = safe_llm_invoke(llm, msg, retries=2)
     except Exception as e:
-        print(f"\t[ERROR] Ошибка llm  \n{e}.")
+        logger.error(f"[Router node] Ошибка llm  \n{e}.")
         raise
-         
+
 
     # Запрос чтения json
     try:
         obj = parse_json_or_repair(raw, llm=llm, retries=1)
     except Exception as e:
-        print(f"\t[ERROR] Json Parse error \n{e}")
+        logger.error(f"[Router node] Json Parse error \n{e}")
         raise
     
 
@@ -63,20 +68,18 @@ def router_node(state: AgentState, llm) -> dict:
     q = str(obj.get("web_search_query", "")).strip()
     s = str(obj.get("search_phrase", "")).strip()
 
-    if CONFIG.DEBUG:
-        print(f"\t[LOG] Model verdict: can decide now - {can}")
-        print(f"\t[LOG] Model verdict: {str(obj.get('reason', ''))}")
-        print(f"\t[LOG] Model generated Query: {q}")
-        print(f"\t[LOG] Model generated Phrase: {s}")
-        
-
+    # Logging 
+    logger.info(f"[Router node] Model verdict: can decide now - {can}")
+    logger.info(f"[Router node] Model verdict: {str(obj.get('reason', ''))}")
+    logger.info(f"[Router node] Model generated Query: {q}")
+    logger.info(f"[Router node] Model generated Phrase: {s}")
+    
 
     return {
         "can_decide_now": can,
-        "web_search_query": str(obj.get("web_search_query", "")),
-        "search_phrase": str(obj.get("search_phrase", "")),
+        "web_search_query": q,
+        "search_phrase": s,
     }
-
 
 
 def web_search_node(state: AgentState) -> dict:
@@ -84,9 +87,8 @@ def web_search_node(state: AgentState) -> dict:
     Нода выполняет запрос к LLM для формирования правильного запроса.
     В конце увеличивает счетчик попыток поиска.
     """
-    if CONFIG.DEBUG:
-        print(f"[LOG] Node: web_search_node.")
-        print(f"\t[LOG] Starting searching")
+    logger = get_logger() # get logger
+    logger.info(f"[web_search_node] Starting searching...")
 
     # запрос
     q = str(state.get("web_search_query", "")).strip()
@@ -96,14 +98,13 @@ def web_search_node(state: AgentState) -> dict:
     try:
         result = safe_web_search(q, CONFIG.web_provider, retries=2)
     except Exception as e:
-        
-        print(f"\t[ERROR] Ошибка веб поиска \n{e}.")
+        logger.error(f"[web_search_node] Ошибка веб поиска \n{e}.")
         raise
 
 
-    if CONFIG.DEBUG:
-        print(f"\t[LOG] Ending searching.")
-        print(f"\t[LOG] Finded info: {result}"[:500])
+    
+    logger.info(f"[web_search_node] Ending searching.")
+    logger.debug(f"[web_search_node] Finded info: {result}"[:100])
 
     return {
         "web_search_result": result,
@@ -117,10 +118,9 @@ def augment_context_node(state: AgentState, model_embeddings) -> dict:
     Внимание! Тут старый результат поиска если он есть удаляется.
     Причина: старый результат нам не нужен, так как второй раз мы ищем если первый запрос модели был неккоректен.
     """
-    if CONFIG.DEBUG:
-        print(f"[LOG] Node: augment_context_node")
-        print(f"\t[LOG] Starting finding chunks...")
-
+    logger = get_logger() # get logger
+    
+    logger.info(f"[augment_context_node] Starting finding chunks...")
 
     web_results = state.get("web_search_result") or []
     web_search_query = state.get("web_search_query", "")
@@ -129,14 +129,14 @@ def augment_context_node(state: AgentState, model_embeddings) -> dict:
     # fallback если нет запроса
     if query == "":
         if web_search_query != "":
-            print(f"\t[WARNING] Query is clean. Using web search query instead {web_search_query}")
+            logger.warning(f"[augment_context_node] Query is clean. Using web search query instead {web_search_query}")
         else:
-            print(f"\t[WARNING] Query and web search query is clean")
+            logger.warning(f"[augment_context_node] Query and web search query is clean!! ")
             return {}
 
-    if CONFIG.DEBUG:
-        print(f"\t[LOG] Phrase: {query}")
-
+    
+    logger.info(f"[augment_context_node] Phrase: {query}")
+    logger.info(f"[augment_context_node] Starting finding chunks ...")
     # Поиск нужных чанков в документе
     top_chunks = retrieve_top_chunks_on_the_fly(
         query,
@@ -151,8 +151,8 @@ def augment_context_node(state: AgentState, model_embeddings) -> dict:
         lexical_prefilter_topn=0 # отключим пока что фильтр
     )
     
-    if CONFIG.DEBUG:
-        print(f"\t[LOG] Chunks finded: {top_chunks}")
+    
+    logger.debug(f"[augment_context_node] Chunks finded: {top_chunks}")
 
     return {"org_web_evidence": top_chunks}
 
@@ -161,9 +161,10 @@ def classify_node(state: AgentState, llm) -> dict:
     """
     Классификационная нода
     """
-    if CONFIG.DEBUG:
-        print(f"[LOG] Node: classify_node")
+    logger = get_logger() # get logger
+    logger.info(f"[classify_node] Starting classification...")
 
+    # Get state info
     org = dict(state["organization"])
     org["web_query"] = state.get("web_search_query", "")
     org["web_evidence"] = state.get("org_web_evidence", "")
@@ -173,34 +174,33 @@ def classify_node(state: AgentState, llm) -> dict:
         "query": state["query"],
         "organization": org
     }
-
+    
+    # Construct a prompt
     msg = CLASSIFIER_PROMPT + "\n\nEXAMPLES:\n"+ CLASSIFIER_FEW_SHOT + "\n\nINPUT:\n" + json.dumps(current_case, ensure_ascii=False)
 
     # Запрос модели
     try:
         raw = safe_llm_invoke(llm, msg, retries=2)
     except Exception as e:
-        print(f"\t[ERROR] : classify_node. LLM Invoke error \n{e}")
+        logger.error(f"[classify_node] LLM Invoke error \n{e}")
         raise
 
     # Запрос чтения json
     try:
         obj = parse_json_or_repair(raw, llm=llm, retries=1)
     except Exception as e:
-        print(f"\t[ERROR] : classify_node. Json Parse error \n{e}")
+        logger.error(f"[classify_node] Json Parse error \n{e}")
         raise
 
-
+    # Get relevance and reason
     rel = _clamp_relevance(obj.get("relevance"))
     reason = str(obj.get("reason", "")).strip()
     rel_true = state['relevance_true']
 
 
-    if CONFIG.DEBUG:
-        print(f"\t[LOG] Node: classify_node. Model verdict: relevance {rel} (true - {rel_true}), reason {reason}")
+    logger.info(f"[classify_node] Model verdict: relevance {rel} (true - {rel_true}), reason {reason}")
 
     return {
         "relevance_model": rel,
         "reason": reason,
     }
-

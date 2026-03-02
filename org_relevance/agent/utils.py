@@ -2,13 +2,24 @@
 # в этом коде можно будет убрать метод _clamp_relevance, но пока не критично
 # -----
 
-from typing import Dict, Any
+from typing import Dict, Any, Mapping
 import json
 import time
 import random
+import logging
 
 from org_relevance.common.types import Relevance
 from org_relevance.web.providers import ollama_web_search, duckduckgo_web_search
+
+
+def get_logger():
+    """
+    Стандартный метод для получения глобального логгера
+    Работает просто так:
+    `logger = logging.getLogger("org_relevance")`
+    """
+    logger = logging.getLogger("org_relevance")
+    return logger
 
 def _extract_json_object(text: str) -> Dict[str, Any]:
     """

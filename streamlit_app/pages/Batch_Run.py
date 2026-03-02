@@ -139,8 +139,6 @@ if not api_key:
 
 graph = get_graph_cached(provider_name, model_name, api_key, base_url)
 
-
-
 # --------- Запуск программы --------
 st.subheader("Запуск агента")
 

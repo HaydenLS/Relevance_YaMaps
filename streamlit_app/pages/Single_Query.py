@@ -5,8 +5,9 @@ import json
 import streamlit as st
 import pandas as pd
 import time
+import logging
+from collections import deque
 
-from contextlib import redirect_stdout, redirect_stderr
 import io
 
 from langchain_openai import ChatOpenAI
@@ -14,6 +15,8 @@ from langchain_openai import ChatOpenAI
 from org_relevance.config import CONFIG
 from org_relevance.agent.graph import build_graph
 from org_relevance.data.dataset import get_template_from_row
+
+from streamlit_logging import setup_logger_for_streamlit
 
 
 LLM_PROVIDERS = {
@@ -163,19 +166,27 @@ st.subheader("Запуск")
 
 run = st.button("Run graph.invoke()", type="primary")
 
-
 if run:
+    # Logging
+    st.session_state["live_logs"] = deque(maxlen=500) 
+      
+    live_logs_placeholder = st.empty()
+    logger = setup_logger_for_streamlit(
+        live_logs_placeholder,
+        logger_name="org_relevance",
+        level=logging.DEBUG if CONFIG.DEBUG else logging.INFO,
+    )
 
     with st.spinner("Выполняю граф...", show_time=True):
-        buffer = io.StringIO()
+        
         try:
-            with redirect_stdout(buffer), redirect_stderr(buffer):
-                result = graph.invoke(basic_state)
+            basic_state["logger_name"] = "org_relevance" # Добавляем logger_name в state
+            result = graph.invoke(basic_state)
         except Exception as e:
+            logger.exception("Graph failed")
             st.exception(e)
             st.stop()
 
-    logs_output = buffer.getvalue()
 
     st.success("Готово")
 
@@ -189,12 +200,6 @@ if run:
 
     st.markdown("**Вердикт модели (reason):**")
     st.write(result.get("reason", ""))
-
-    with st.expander("Логи выполнения"):
-        if logs_output.strip():
-            st.code(logs_output, language="text")
-        else:
-            st.info("Логи отсутствуют (CONFIG.DEBUG выключен или print не вызывался).")
 
     with st.expander("Полный AgentState Dict"):
         st.code(safe_json(result), language="json")

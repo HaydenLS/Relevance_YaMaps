@@ -1,5 +1,6 @@
 import json
 from typing import TypedDict, Literal, Optional, Dict, Any, List, Sequence, Tuple
+import logging
 
 from langgraph.graph import StateGraph, START, END
 from sentence_transformers import SentenceTransformer
@@ -16,7 +17,6 @@ def build_graph(llm):
 
     # nodes (оборачиваем, чтобы прокинуть llm)
     g.add_node("router", lambda s: router_node(s, llm))
-    # g.add_node("make_search_query", lambda s: make_search_query_node(s, llm))
     g.add_node("web_search", web_search_node)
     g.add_node("augment_context", lambda s: augment_context_node(s, embedding_model))
     g.add_node("classify", lambda s: classify_node(s, llm))
@@ -28,7 +28,6 @@ def build_graph(llm):
         "web_search": "web_search",
     })
 
-    # g.add_edge("make_search_query", "web_search")
     g.add_edge("web_search", "augment_context")
     g.add_edge("augment_context", "router")
 
